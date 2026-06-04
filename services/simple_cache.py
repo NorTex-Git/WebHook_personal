@@ -143,22 +143,65 @@ class NumberCache:
                 conn = sqlite3.connect(self.db_path)
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                
+
                 cursor.execute('SELECT * FROM numbers ORDER BY updated_at DESC')
                 rows = cursor.fetchall()
                 conn.close()
-                
+
                 results = []
                 for row in rows:
                     result = dict(row)
                     if result['data']:
                         result['data'] = json.loads(result['data'])
                     results.append(result)
-                
+
                 return results
-                
+
         except Exception as e:
             logger.error(f"Error getting all numbers: {str(e)}")
+            return []
+
+    def find_by_alert_id(self, alert_id: str, manager_only: bool = False) -> List[Dict]:
+        """Devuelve los números cuyo cache referencia alert_id en info_alert.alert_id.
+
+        Si manager_only=True, filtra solo los que tienen rol.is_alert_manager True.
+        """
+        try:
+            with self.lock:
+                conn = sqlite3.connect(self.db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+
+                cursor.execute('SELECT * FROM numbers')
+                rows = cursor.fetchall()
+                conn.close()
+
+            matches: List[Dict] = []
+            for row in rows:
+                raw_data = row['data']
+                if not raw_data:
+                    continue
+                try:
+                    parsed = json.loads(raw_data)
+                except Exception:
+                    continue
+                info_alert = parsed.get('info_alert') if isinstance(parsed, dict) else None
+                if not isinstance(info_alert, dict):
+                    continue
+                if str(info_alert.get('alert_id', '')) != str(alert_id):
+                    continue
+                if manager_only:
+                    rol = parsed.get('rol') if isinstance(parsed, dict) else None
+                    if not isinstance(rol, dict) or not rol.get('is_alert_manager'):
+                        continue
+                matches.append({
+                    'phone': row['phone'],
+                    'name': row['name'],
+                    'data': parsed
+                })
+            return matches
+        except Exception as e:
+            logger.error(f"Error finding numbers by alert_id {alert_id}: {str(e)}")
             return []
     
     def delete_number(self, phone: str) -> bool:

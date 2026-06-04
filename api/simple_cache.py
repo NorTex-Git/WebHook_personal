@@ -108,7 +108,7 @@ def check_number_exists(phone: str):
     try:
         cache = get_number_cache()
         exists = cache.exists(phone)
-        
+
         return jsonify({
             "success": True,
             "exists": exists,
@@ -116,6 +116,24 @@ def check_number_exists(phone: str):
         }), 200
     except Exception as e:
         logger.error(f"Error checking number existence: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@simple_cache_bp.route('/numbers/by-alert/<alert_id>', methods=['GET'])
+def list_numbers_by_alert(alert_id: str):
+    """Lista números con foco en una alerta. Query param manager_only=true filtra managers."""
+    try:
+        cache = get_number_cache()
+        manager_only = (request.args.get('manager_only', 'false').lower() == 'true')
+        numbers = cache.find_by_alert_id(alert_id=alert_id, manager_only=manager_only)
+        return jsonify({
+            "success": True,
+            "alert_id": alert_id,
+            "manager_only": manager_only,
+            "count": len(numbers),
+            "numbers": numbers
+        }), 200
+    except Exception as e:
+        logger.error(f"Error finding numbers by alert: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @simple_cache_bp.route('/numbers', methods=['POST'])
