@@ -35,4 +35,5 @@ jobs:
             docker network inspect rescue-network >/dev/null 2>&1 || docker network create rescue-network
             docker volume inspect redis_data >/dev/null 2>&1 || docker volume create redis_data
             docker-compose pull
+            docker-compose rm -fs rescue-webhook worker || true
             docker-compose up -d --remove-orphans rescue-webhook worker
