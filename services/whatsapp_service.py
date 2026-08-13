@@ -57,15 +57,17 @@ class WhatsAppService:
     def _get_url(self) -> str:
         return f"{self.base_url}/{self.version}/{self._get_phone_number_id()}/messages"
     
-    def send_text_message(self, to: str, message: str) -> Dict:
-        """Envía un mensaje de texto"""
+    def send_text_message(self, to: str, message: str, context_message_id: str = None) -> Dict:
+        """Envía un mensaje de texto. Si `context_message_id`, cita ese mensaje (reply)."""
         payload = {
             "messaging_product": "whatsapp",
             "to": to,
             "type": "text",
             "text": {"body": message}
         }
-        
+        if context_message_id:
+            payload["context"] = {"message_id": context_message_id}
+
         try:
             response = requests.post(
                 self._get_url(),
@@ -84,6 +86,40 @@ class WhatsAppService:
             logger.error(f"Excepción enviando mensaje: {str(e)}")
             return {"success": False, "error": str(e)}
     
+    def send_media_by_id(self, to: str, media_type: str, media_id: str, caption: str = "", context_message_id: str = None) -> Dict:
+        """Reenvía una media entrante usando su `media_id` (sin re-subir).
+
+        WhatsApp permite reutilizar el id de una media entrante para enviarla a otros
+        números del mismo WABA. `caption` solo aplica a image/video.
+        `context_message_id` cita un mensaje (reply).
+        """
+        media_type = (media_type or "").lower()
+        if media_type not in ("image", "audio", "video", "sticker"):
+            return {"success": False, "error": f"Tipo de media no soportado: {media_type}"}
+
+        media_obj = {"id": media_id}
+        if caption and media_type in ("image", "video"):
+            media_obj["caption"] = caption
+
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": media_type,
+            media_type: media_obj,
+        }
+        if context_message_id:
+            payload["context"] = {"message_id": context_message_id}
+        try:
+            response = requests.post(self._get_url(), headers=self._get_headers(), json=payload)
+            if response.status_code == 200:
+                logger.info(f"Media ({media_type}) reenviada a {to}")
+                return {"success": True, "data": response.json()}
+            logger.error(f"Error reenviando media: {response.status_code} - {response.text}")
+            return {"success": False, "error": response.text}
+        except Exception as e:
+            logger.error(f"Excepción reenviando media: {str(e)}")
+            return {"success": False, "error": str(e)}
+
     def send_template_message(self, to: str, template_name: str, language: str = "es", parameters: Optional[List[str]] = None) -> Dict:
         """Envía un mensaje de plantilla (método simple para compatibilidad)"""
         return self.send_template_message_advanced(to, template_name, language, None, parameters)
@@ -777,7 +813,31 @@ class WhatsAppService:
         except Exception as e:
             logger.error(f"Excepción obteniendo media URL: {str(e)}")
             return None
-    
+
+    def download_media(self, media_id: str):
+        """Descarga los bytes de un archivo multimedia de WhatsApp.
+
+        Cloud API entrega la media en 2 pasos, ambos con el Bearer token:
+          1) GET /<media_id> -> JSON con la `url` (efímera, ~5 min).
+          2) GET <url> con el mismo Bearer -> los bytes binarios.
+        Devuelve (content_bytes, mime_type) o (None, None) si falla.
+        """
+        media_url = self.get_media_url(media_id)
+        if not media_url:
+            return None, None
+        try:
+            # La URL de descarga exige Authorization; Content-Type json no aplica al binario.
+            headers = {'Authorization': f'Bearer {self._get_access_token()}'}
+            response = requests.get(media_url, headers=headers, timeout=60)
+            if response.status_code == 200:
+                mime_type = response.headers.get('Content-Type') or 'application/octet-stream'
+                return response.content, mime_type
+            logger.error(f"Error descargando media {media_id}: {response.status_code}")
+            return None, None
+        except Exception as e:
+            logger.error(f"Excepción descargando media {media_id}: {str(e)}")
+            return None, None
+
     def send_bulk_template_messages(self, recipients: List[Dict]) -> Dict:
         """Envía plantillas masivas personalizadas de forma simultánea"""
         results = {

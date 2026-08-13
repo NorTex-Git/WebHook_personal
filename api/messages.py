@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response
 import logging
 from services.whatsapp_service import WhatsAppService
 from services.queue_service import QueueService
@@ -38,12 +38,13 @@ def send_message():
         phone = data.get('phone')
         message = data.get('message')
         use_queue = data.get('use_queue', False)
-        
+        context_message_id = data.get('context_message_id')
+
         if not phone or not message:
             return jsonify({"error": "Faltan parámetros: phone y message son requeridos"}), 400
-        
+
         if use_queue and queue_service:
-            # Enviar usando cola
+            # Enviar usando cola (la cola no propaga el contexto de respuesta).
             task = queue_service.send_message_async(phone, message)
             return jsonify({
                 "success": True,
@@ -52,7 +53,7 @@ def send_message():
             }), 200
         else:
             # Enviar directamente
-            result = whatsapp_service.send_text_message(phone, message)
+            result = whatsapp_service.send_text_message(phone, message, context_message_id=context_message_id)
             
             if result['success']:
                 return jsonify({
@@ -350,6 +351,59 @@ def get_media(media_id):
             
     except Exception as e:
         logger.error(f"Error obteniendo media: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@messages_bp.route('/send-media', methods=['POST'])
+def send_media():
+    """Reenvía una media entrante (image/audio/video/sticker) por su media_id."""
+    global whatsapp_service
+
+    if not whatsapp_service:
+        init_services()
+
+    try:
+        if not whatsapp_service:
+            return jsonify({"error": "Servicio no disponible"}), 500
+
+        data = request.json or {}
+        phone = data.get('phone')
+        media_type = data.get('type')
+        media_id = data.get('media_id') or data.get('id')
+        caption = data.get('caption', '')
+        context_message_id = data.get('context_message_id')
+
+        if not phone or not media_type or not media_id:
+            return jsonify({"error": "Faltan parámetros: phone, type y media_id son requeridos"}), 400
+
+        result = whatsapp_service.send_media_by_id(phone, media_type, media_id, caption, context_message_id=context_message_id)
+        if result.get('success'):
+            return jsonify({"success": True, "data": result.get('data')}), 200
+        return jsonify({"success": False, "error": result.get('error')}), 400
+
+    except Exception as e:
+        logger.error(f"Error enviando media: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@messages_bp.route('/media/<media_id>/download', methods=['GET'])
+def download_media(media_id):
+    """Descarga los bytes del archivo multimedia (server-side, con el token)."""
+    global whatsapp_service
+
+    if not whatsapp_service:
+        init_services()
+
+    try:
+        if not whatsapp_service:
+            return jsonify({"error": "Servicio no disponible"}), 500
+
+        content, mime_type = whatsapp_service.download_media(media_id)
+        if content is None:
+            return jsonify({"success": False, "error": "No se pudo descargar el archivo"}), 404
+
+        return Response(content, mimetype=mime_type or 'application/octet-stream')
+
+    except Exception as e:
+        logger.error(f"Error descargando media: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @messages_bp.route('/send-interactive', methods=['POST'])
