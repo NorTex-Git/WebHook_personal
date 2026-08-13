@@ -120,6 +120,24 @@ class WhatsAppService:
             logger.error(f"Excepción reenviando media: {str(e)}")
             return {"success": False, "error": str(e)}
 
+    def send_reaction(self, to: str, message_id: str, emoji: str = "") -> Dict:
+        """Reacciona a un mensaje (emoji vacío = quitar la reacción)."""
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "reaction",
+            "reaction": {"message_id": message_id, "emoji": emoji or ""},
+        }
+        try:
+            response = requests.post(self._get_url(), headers=self._get_headers(), json=payload)
+            if response.status_code == 200:
+                return {"success": True, "data": response.json()}
+            logger.error(f"Error enviando reacción: {response.status_code} - {response.text}")
+            return {"success": False, "error": response.text}
+        except Exception as e:
+            logger.error(f"Excepción enviando reacción: {str(e)}")
+            return {"success": False, "error": str(e)}
+
     def send_template_message(self, to: str, template_name: str, language: str = "es", parameters: Optional[List[str]] = None) -> Dict:
         """Envía un mensaje de plantilla (método simple para compatibilidad)"""
         return self.send_template_message_advanced(to, template_name, language, None, parameters)

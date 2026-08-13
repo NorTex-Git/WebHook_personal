@@ -384,6 +384,35 @@ def send_media():
         logger.error(f"Error enviando media: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+@messages_bp.route('/send-reaction', methods=['POST'])
+def send_reaction():
+    """Reacciona a un mensaje por su wamid (emoji vacío = quitar)."""
+    global whatsapp_service
+
+    if not whatsapp_service:
+        init_services()
+
+    try:
+        if not whatsapp_service:
+            return jsonify({"error": "Servicio no disponible"}), 500
+
+        data = request.json or {}
+        phone = data.get('phone')
+        message_id = data.get('message_id')
+        emoji = data.get('emoji', '')
+
+        if not phone or not message_id:
+            return jsonify({"error": "Faltan parámetros: phone y message_id son requeridos"}), 400
+
+        result = whatsapp_service.send_reaction(phone, message_id, emoji)
+        if result.get('success'):
+            return jsonify({"success": True, "data": result.get('data')}), 200
+        return jsonify({"success": False, "error": result.get('error')}), 400
+
+    except Exception as e:
+        logger.error(f"Error enviando reacción: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 @messages_bp.route('/media/<media_id>/download', methods=['GET'])
 def download_media(media_id):
     """Descarga los bytes del archivo multimedia (server-side, con el token)."""
