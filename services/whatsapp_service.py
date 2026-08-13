@@ -824,6 +824,7 @@ class WhatsAppService:
         """
         media_url = self.get_media_url(media_id)
         if not media_url:
+            logger.error(f"download_media: get_media_url devolvió None para {media_id} (¿token/id inválido?)")
             return None, None
         try:
             # La URL de descarga exige Authorization; Content-Type json no aplica al binario.
@@ -831,8 +832,9 @@ class WhatsAppService:
             response = requests.get(media_url, headers=headers, timeout=60)
             if response.status_code == 200:
                 mime_type = response.headers.get('Content-Type') or 'application/octet-stream'
+                logger.info(f"download_media: OK {media_id} ({len(response.content)} bytes, {mime_type})")
                 return response.content, mime_type
-            logger.error(f"Error descargando media {media_id}: {response.status_code}")
+            logger.error(f"Error descargando media {media_id}: {response.status_code} - {response.text[:200]}")
             return None, None
         except Exception as e:
             logger.error(f"Excepción descargando media {media_id}: {str(e)}")
