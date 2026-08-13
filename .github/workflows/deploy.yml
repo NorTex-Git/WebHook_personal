@@ -35,4 +35,8 @@ jobs:
             docker network inspect rescue-network >/dev/null 2>&1 || docker network create rescue-network
             docker volume inspect redis_data >/dev/null 2>&1 || docker volume create redis_data
             docker-compose build --pull rescue-webhook worker
+            # Borrar los contenedores antes de recrear: docker-compose v1 (1.29.2) rompe
+            # con "KeyError: 'ContainerConfig'" al RECREAR sobre imágenes de BuildKit.
+            # Sin contenedor previo, hace CREATE (no RECREATE) y no toca ese metadato.
+            docker-compose rm -fs rescue-webhook worker || true
             docker-compose up -d --remove-orphans rescue-webhook worker
